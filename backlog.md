@@ -38,27 +38,27 @@
 ## Epic F1 - Topología + hardening + backup
 
 ### Despliegue (7 CHR + 2 switches + 2 hosts)
-- [ ] [R1] Levantar nodos de la topología en GNS3
-- [ ] [R1] Conectar los enlaces según topología
+- [x] [R1] Levantar nodos de la topología en GNS3
+- [x] [R1] Conectar los enlaces según topología
 
 ### IPs de enlace + loopbacks
-- [ ] [R1] Configurar IP e interfaz en EDGE
-- [ ] [R2] Configurar IP y loopbacks en ISP-1 e ISP-2
-- [ ] [R3] Configurar IP y loopbacks en CORE-1 y CORE-2
-- [ ] [R4] Configurar IP y loopbacks en DIST-1 y DIST-2
-- [ ] [R5] Verificar ping entre vecinos directos
+- [x] [R1] Configurar IP e interfaz en EDGE
+- [x] [R2] Configurar IP y loopbacks en ISP-1 e ISP-2
+- [x] [R3] Configurar IP y loopbacks en CORE-1 y CORE-2
+- [x] [R4] Configurar IP y loopbacks en DIST-1 y DIST-2
+- [x] [R5] Verificar ping entre vecinos directos
 
 ### Snapshot BASE
-- [ ] [R5] Tomar snapshot en GNS3
+- [x] [R5] Tomar snapshot en GNS3
 
 ### Hardening (los 7 routers)
-- [ ] [R1] Aplicar hardening en EDGE
-- [ ] [R2] Aplicar hardening en ISP-1 e ISP-2
-- [ ] [R3] Aplicar hardening en CORE-1 y CORE-2
-- [ ] [R4] Aplicar hardening en DIST-1 y DIST-2
+- [x] [R1] Aplicar hardening en EDGE
+- [x] [R2] Aplicar hardening en ISP-1 e ISP-2
+- [x] [R3] Aplicar hardening en CORE-1 y CORE-2
+- [x] [R4] Aplicar hardening en DIST-1 y DIST-2
 
 ### Backup inicial (/export)
-- [ ] [R5] Exportar config de todos los routers y subir a repo
+- [x] [R5] Exportar config de todos los routers y subir a repo
 
 ---
 
