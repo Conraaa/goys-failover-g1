@@ -65,20 +65,20 @@
 ## Epic F2 - VRRP + OSPF
 
 ### VRRP (2 grupos, load-sharing, auth)
-- [ ] [R4] configurar VRRP vrid 10 en DIST-1 (master)
-- [ ] [R4] configurar VRRP vrid 20 en DIST-2 (master)
-- [ ] [R4] activar auth simple en ambos grupos
-- [ ] [R5] verificar master/backup con /interface vrrp print
+- [x] [R4] configurar VRRP vrid 10 en DIST-1 (master)
+- [x] [R4] configurar VRRP vrid 20 en DIST-2 (master)
+- [x] [R4] activar auth simple en ambos grupos
+- [x] [R5] verificar master/backup con /interface vrrp print
 
 ### OSPF área 0 (con MD5, incluido core–core)
-- [ ] [R3] Configurar OSPF en CORE-1 y CORE-2 (incluyendo core-core)
-- [ ] [R4] Configurar OSPF en DIST-1 y DIST-2
-- [ ] [R1] Configurar OSPF en EDGE
-- [ ] [R3] Activar autenticación MD5 en todas las adyacencias
+- [x] [R3] Configurar OSPF en CORE-1 y CORE-2 (incluyendo core-core)
+- [x] [R4] Configurar OSPF en DIST-1 y DIST-2
+- [x] [R1] Configurar OSPF en EDGE
+- [x] [R3] Activar autenticación MD5 en todas las adyacencias
 
 ### Verificación L3 (ping intra-LAN + gateway virtual)
-- [ ] [R5] Configurar IP estáticas en PC-USER y SRV
-- [ ] [R5] Comprobar ping a gateways virtuales e intra-LAN
+- [x] [R5] Configurar IP estáticas en PC-USER y SRV
+- [x] [R5] Comprobar ping a gateways virtuales e intra-LAN
 
 ---
 
