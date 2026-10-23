@@ -1,0 +1,45 @@
+# 2026-10-22 22:25:21 by RouterOS 7.15.3
+# software id =
+#
+/disk
+set slot1 media-interface=none media-sharing=no slot=slot1
+set slot2 media-interface=none media-sharing=no slot=slot2
+set slot3 media-interface=none media-sharing=no slot=slot3
+set slot4 media-interface=none media-sharing=no slot=slot4
+set slot5 media-interface=none media-sharing=no slot=slot5
+/interface bridge
+add name=loopback
+/interface ethernet
+set [ find default-name=ether1 ] disable-running-check=no
+set [ find default-name=ether2 ] disable-running-check=no
+set [ find default-name=ether3 ] disable-running-check=no
+set [ find default-name=ether4 ] disable-running-check=no
+set [ find default-name=ether5 ] disable-running-check=no
+/port
+set 0 name=serial0
+/routing ospf instance
+add disabled=no name=ospf1 router-id=4.4.4.4
+/routing ospf area
+add disabled=no instance=ospf1 name=backbone
+/ip address
+add address=4.4.4.4 interface=loopback network=4.4.4.4
+add address=10.0.3.2/30 interface=ether1 network=10.0.3.0
+add address=10.0.5.1/30 interface=ether2 network=10.0.5.0
+add address=10.0.6.1/30 interface=ether3 network=10.0.6.0
+add address=10.0.7.1/30 interface=ether4 network=10.0.7.0
+/ip dhcp-client
+add interface=ether1
+/ip service
+set telnet disabled=yes
+set ftp disabled=yes
+set www disabled=yes
+set api disabled=yes
+set api-ssl disabled=yes
+/routing ospf interface-template
+add area=backbone auth=md5 auth-id=1 auth-key=ospf-secret-g1 disabled=no \
+    interfaces=ether1,ether2,ether3,ether4 type=ptp
+add area=backbone disabled=no interfaces=loopback passive
+/system identity
+set name=CORE-1
+/system note
+set show-at-login=no
