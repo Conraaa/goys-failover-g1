@@ -107,40 +107,50 @@ Se implementó la topología jerárquica de 5 capas en GNS3 compuesta por 11 nod
 
 ---
 
-## 3. Configuración (Estado Operativo F2)
+## 3. Configuración (Estado Operativo F3)
 
-Las configuraciones operativas con VRRP, OSPF área 0 y autenticación aplicadas en cada dispositivo fueron extraídas y versionadas en `backups/F2/`.
+Las configuraciones operativas con VRRP, OSPF área 0, eBGP multi-homing y firewall perimetral aplicadas en cada dispositivo fueron extraídas y versionadas en `backups/F3/`.
 
 ### 3.1 ISP-1
 ```routeros
-# F2: sin cambios respecto de F1 (ISP no participa en VRRP/OSPF)
 /interface bridge add name=loopback
+/routing bgp template add as=65001 name=default router-id=1.1.1.1
 /ip address
 add address=1.1.1.1 interface=loopback network=1.1.1.1
 add address=10.0.1.1/30 interface=ether1 network=10.0.1.0
+/ip firewall address-list add address=1.1.1.1 list=bgp-networks
 /ip service
 set telnet disabled=yes
 set ftp disabled=yes
 set www disabled=yes
 set api disabled=yes
 set api-ssl disabled=yes
+/routing bgp connection
+add as=65001 local.address=10.0.1.1 .role=ebgp name=to-EDGE \
+    output.network=bgp-networks,0.0.0.0/0 remote.address=10.0.1.2 .as=65000 \
+    tcp-md5-key=bgp-secret-g1 templates=default
 /system identity set name=ISP-1
 /system note set show-at-login=no
 ```
 
 ### 3.2 ISP-2
 ```routeros
-# F2: sin cambios respecto de F1 (ISP no participa en VRRP/OSPF)
 /interface bridge add name=loopback
+/routing bgp template add as=65002 name=default router-id=2.2.2.2
 /ip address
 add address=2.2.2.2 interface=loopback network=2.2.2.2
 add address=10.0.2.1/30 interface=ether1 network=10.0.2.0
+/ip firewall address-list add address=2.2.2.2 list=bgp-networks
 /ip service
 set telnet disabled=yes
 set ftp disabled=yes
 set www disabled=yes
 set api disabled=yes
 set api-ssl disabled=yes
+/routing bgp connection
+add as=65002 local.address=10.0.2.1 .role=ebgp name=to-EDGE \
+    output.network=bgp-networks,0.0.0.0/0 remote.address=10.0.2.2 .as=65000 \
+    tcp-md5-key=bgp-secret-g1 templates=default
 /system identity set name=ISP-2
 /system note set show-at-login=no
 ```
@@ -148,7 +158,9 @@ set api-ssl disabled=yes
 ### 3.3 EDGE
 ```routeros
 /interface bridge add name=loopback
-/routing ospf instance add disabled=no name=ospf1 router-id=3.3.3.3
+/routing bgp template add as=65000 name=default router-id=3.3.3.3
+/routing ospf instance add disabled=no name=ospf1 originate-default=always \
+    redistribute=bgp router-id=3.3.3.3
 /routing ospf area add disabled=no instance=ospf1 name=backbone
 /ip address
 add address=3.3.3.3 interface=loopback network=3.3.3.3
@@ -156,12 +168,32 @@ add address=10.0.1.2/30 interface=ether1 network=10.0.1.0
 add address=10.0.2.2/30 interface=ether2 network=10.0.2.0
 add address=10.0.3.1/30 interface=ether3 network=10.0.3.0
 add address=10.0.4.1/30 interface=ether4 network=10.0.4.0
+/ip firewall filter
+add action=accept chain=input comment="Aceptar trafico de conexiones establecidas" connection-state=established,related
+add action=accept chain=input comment="Aceptar pings" protocol=icmp
+add action=accept chain=input comment="Permitir OSPF desde CORE-1" in-interface=ether3 protocol=ospf
+add action=accept chain=input comment="Permitir OSPF desde CORE-2" in-interface=ether4 protocol=ospf
+add action=accept chain=input comment="Permitir BGP ISP-1" dst-port=179 in-interface=ether1 protocol=tcp
+add action=accept chain=input comment="Permitir BGP ISP-2" dst-port=179 in-interface=ether2 protocol=tcp
+add action=accept chain=input comment="Acceso gestion desde LAN via CORE-1" in-interface=ether3
+add action=accept chain=input comment="Acceso gestion desde LAN via CORE-2" in-interface=ether4
+add action=drop chain=input comment="Bloquear input desde WAN ISP-1" in-interface=ether1
+add action=drop chain=input comment="Bloquear input desde WAN ISP-2" in-interface=ether2
+add action=accept chain=forward comment="Permitir retorno de trafico de Internet" connection-state=established,related
+add action=drop chain=forward comment="Bloquear paquetes invalidos" connection-state=invalid
+add action=drop chain=forward comment="Bloquear inicio de conexiones desde ISP-1" connection-state=new in-interface=ether1
+add action=drop chain=forward comment="Bloquear inicio de conexiones desde ISP-2" connection-state=new in-interface=ether2
 /ip service
 set telnet disabled=yes
 set ftp disabled=yes
 set www disabled=yes
 set api disabled=yes
 set api-ssl disabled=yes
+/routing bgp connection
+add as=65000 local.address=10.0.1.2 .role=ebgp name=to-ISP1 output.redistribute=ospf \
+    remote.address=10.0.1.1 .as=65001 tcp-md5-key=bgp-secret-g1 templates=default
+add as=65000 local.address=10.0.2.2 .role=ebgp name=to-ISP2 output.redistribute=ospf \
+    remote.address=10.0.2.1 .as=65002 tcp-md5-key=bgp-secret-g1 templates=default
 /routing ospf interface-template
 add area=backbone auth=md5 auth-id=1 auth-key=ospf-secret-g1 disabled=no \
     interfaces=ether3,ether4 type=ptp
@@ -292,7 +324,7 @@ add area=backbone disabled=no interfaces=ether3,ether4,loopback passive
 
 ## 4. Verificación
 
-### 4.1 Conectividad básica L3 y Protocolos (F1 y F2)
+### 4.1 Conectividad básica L3 y Protocolos (F1, F2 y F3)
 
 #### Conectividad P2P entre Vecinos Directos (F1)
 Se verificó conectividad mediante `ping` bidireccional en cada enlace punto a punto (`/30`) y loopbacks:
@@ -347,6 +379,45 @@ Se verificó conectividad mediante `ping` bidireccional en cada enlace punto a p
 | Ping Loopback EDGE | PC-USER / SRV | 3.3.3.3 | OK (0% packet loss) |
 | Ping Loopbacks Core | PC-USER / SRV | 4.4.4.4 / 5.5.5.5 | OK (0% packet loss) |
 
+#### Verificación eBGP Multi-Homing (F3)
+Se configuró multi-homing eBGP con dos proveedores independientes utilizando el sistema autónomo propio `AS 65000`:
+- **Sesión `to-ISP1`:** Peering con ISP-1 (`AS 65001`, IP remota `10.0.1.1`).
+- **Sesión `to-ISP2`:** Peering con ISP-2 (`AS 65002`, IP remota `10.0.2.1`).
+- **Seguridad BGP:** Autenticación TCP-MD5 (`tcp-md5-key=bgp-secret-g1`, RFC 2385) activa en ambos peerings.
+- **Estado:** Ambas sesiones levantaron en estado `established` (E).
+
+![Sesiones eBGP en EDGE](../capturas/F3%20-%20EDGE%20-%20routing%20bgp%20session%20print.png)
+
+#### Verificación de Tabla de Rutas y Redistribución OSPF ↔ BGP (F3)
+Se implementó redistribución bidireccional controlada:
+1. **OSPF → BGP:** En EDGE se configuró `output.redistribute=ospf` en las conexiones BGP hacia ISP-1 e ISP-2, anunciando las redes LAN internas (`192.168.10.0/24`, `192.168.20.0/24`) y enlaces hacia Internet.
+2. **BGP → OSPF / Default Route:** Los ISP anuncian una ruta por defecto `0.0.0.0/0` vía BGP (`output.network=bgp-networks,0.0.0.0/0`). En EDGE, la instancia OSPF inyecta la ruta por defecto en el IGP mediante `originate-default=always redistribute=bgp`, propagándola dinámicamente hacia CORE-1, CORE-2, DIST-1 y DIST-2.
+
+![Tabla de Enrutamiento en EDGE](../capturas/F3%20-%20EDGE%20-%20ip%20route%20print.png)
+
+#### Verificación de Salida a Internet desde Hosts (F3)
+Se verificó la salida a "Internet" desde los hosts finales simulada a través de las loopbacks públicas de los proveedores:
+- **Prueba:** Ping desde `PC-USER` (`192.168.10.100`) hacia `1.1.1.1` (loopback de ISP-1).
+- **Flujo de tráfico verificado:**
+  `PC-USER` → Gateway Virtual VRRP 10 (`192.168.10.1` en DIST-1) → `CORE-1` (vía OSPF) → `EDGE` (vía ruta por defecto OSPF) → `ISP-1` (vía enlace eBGP /30).
+- **Resultado:** 0% packet loss y conectividad validada.
+
+![Ping PC-USER a Loopback de ISP-1](../capturas/F3%20-%20PC-USER%20-%20ping%201.1.1.1.png)
+
+#### Verificación Firewall de Borde (F3)
+En el router `EDGE` se implementó filtrado perimetral con RouterOS Firewall:
+- **Cadena `input`:**
+  - Acepta tráfico establecido y relacionado (`connection-state=established,related`).
+  - Acepta ICMP (ping de diagnóstico).
+  - Permite tráfico OSPF únicamente desde las interfaces internas hacia el Core (`ether3`, `ether4`).
+  - Permite BGP exclusivamente en el puerto TCP 179 desde los enlaces hacia proveedores (`ether1`, `ether2`).
+  - Permite acceso de administración SSH/Winbox exclusivamente desde la red interna a través del Core (`ether3`, `ether4`).
+  - Bloquea todo intento de conexión de gestión o entrada directa no autorizada desde las WANs de ISP-1 e ISP-2 (`in-interface=ether1,ether2 action=drop`).
+- **Cadena `forward`:**
+  - Inspección con estado: permite retorno de conexiones iniciadas desde la LAN (`connection-state=established,related`).
+  - Bloquea paquetes con estado `invalid`.
+  - Bloquea cualquier intento de inicio de conexión nueva que provenga desde el exterior hacia las LANs internas (`connection-state=new in-interface=ether1,ether2 action=drop`).
+
 ---
 
 ## 5. Seguridad aplicada
@@ -358,7 +429,8 @@ Se verificó conectividad mediante `ping` bidireccional en cada enlace punto a p
 | **Supresión de banners** | Los 7 routers | `set show-at-login=no` en `/system note` para evitar divulgación de información en login. |
 | **OSPF MD5** | EDGE, CORE-1, CORE-2, DIST-1, DIST-2 | Autenticación criptográfica MD5 (`auth=md5`, `auth-key=ospf-secret-g1`) en todas las interfaces PTP de tránsito. Verificado establecimiento de adyacencias Full. |
 | **VRRP auth** | DIST-1 y DIST-2 | Autenticación simple con clave `vrrpg1` en los grupos VRID 10 y VRID 20. Limitada a 8 caracteres conforme a la especificación VRRPv2. |
-| **BGP TCP-MD5 / Firewall** | F3 | *(se implementará en F3).* |
+| **BGP TCP-MD5** | EDGE, ISP-1, ISP-2 | Autenticación criptográfica TCP-MD5 (`tcp-md5-key=bgp-secret-g1`, RFC 2385) en ambas sesiones eBGP. Sesiones operativas en estado established. |
+| **Firewall perimetral (Input / Forward)** | EDGE | Filtro en cadena `input` (protección del plano de control BGP/OSPF y plano de gestión sólo desde LAN) y en cadena `forward` (bloqueo de tráfico inválido e inicio de conexiones no solicitadas desde WAN). |
 
 ---
 
@@ -375,23 +447,36 @@ Se verificó conectividad mediante `ping` bidireccional en cada enlace punto a p
 | 2026-10-22 | Conrado (R1/R3) y Romeo (R4) | Configuración de OSPF área 0 (backbone) con MD5 auth (`ospf-secret-g1`) y ptp en EDGE, CORE-1, CORE-2, DIST-1, DIST-2 | Enrutamiento dinámico interno con reconvergencia ante fallas (F2) | Deshabilitar o borrar instancia OSPF en `/routing ospf` |
 | 2026-10-22 | Romeo (R4) y Conrado (R1/R5) | Ajuste de clave VRRP de `vrrp-secret-g1` a `vrrpg1` | Limitación de autenticación simple de VRRPv2 a 8 caracteres (RFC 3768) | Reconfigurar password en `/interface vrrp` |
 | 2026-10-22 | Conrado (R1/R3/R5) y Romeo (R2/R4) | Exportación de backups `/export show-sensitive` de los 7 routers a `backups/F2/` | Punto de control y versionado de configuraciones operativas F2 | Restaurar mediante `/import` de backups F2 |
+| 2026-11-04 | Conrado (R1) y Romeo (R2) | Configuración de sesiones eBGP multi-homing con autenticación TCP-MD5 (`bgp-secret-g1`) en EDGE, ISP-1 e ISP-2 | Redundancia de salida a Internet y selección de caminos inter-AS (F3) | Deshabilitar o borrar conexiones en `/routing bgp connection` |
+| 2026-11-04 | Conrado (R1) | Configuración de redistribución mutua OSPF/BGP en EDGE (`originate-default=always redistribute=bgp` y `output.redistribute=ospf`) | Propagación de salida a Internet en el Core/Distribución y anuncio de LANs a los ISP (F3) | Remover flags de redistribución en OSPF y BGP |
+| 2026-11-04 | Conrado (R1) | Configuración de reglas de firewall perimetral (input y forward) en router EDGE | Protección del plano de control, plano de gestión y filtrado perimetral contra intrusiones WAN (F3) | Deshabilitar reglas en `/ip firewall filter` |
+| 2026-11-04 | Conrado (R5) | Creación de Snapshot F3-BGP-FW en GNS3 y exportación de backups a `backups/F3/` | Punto de control de configuraciones operativas F3 y respaldos versionados | Restaurar el snapshot F3-BGP-FW o importar backups con `/import` |
 
 ### 6.2 Backups
 
 - **Archivos exportados F1:** Versionados en `backups/F1/` (`backup-f1-*.rcs`).
-- **Archivos exportados F2:**
-  - `backups/F2/backup-f2-ISP-1.rsc`
-  - `backups/F2/backup-f2-ISP-2.rsc`
-  - `backups/F2/backup-f2-EDGE.rsc`
-  - `backups/F2/backup-f2-CORE-1.rsc`
-  - `backups/F2/backup-f2-CORE-2.rsc`
-  - `backups/F2/backup-f2-DIST-1.rsc`
-  - `backups/F2/backup-f2-DIST-2.rsc`
+- **Archivos exportados F2:** Versionados en `backups/F2/` (`backup-f2-*.rsc`).
+- **Archivos exportados F3:** Versionados en `backups/F3/`:
+  - `backups/F3/backup-f3-EDGE.rsc`
+  - `backups/F3/backup-f3-ISP-1.rsc`
+  - `backups/F3/backup-f3-ISP-2.rsc`
 - **Snapshots GNS3:**
   - `BASE`: Captura del estado inicial y cableado verificado de la topología (F1).
   - `F2-VRRP-OSPF`: Captura con los servicios de VRRP (load-sharing) y OSPF área 0 operativos y convergidos (F2).
+  - `F3-BGP-FW`: Captura con sesiones eBGP multi-homing establecidas, redistribución de rutas por defecto y LANs, y firewall perimetral activo en EDGE (F3).
 - **Procedimiento de restauración:** Probado mediante comando `/import file-name=<archivo>.rsc`.
 
 ---
 
-*(Secciones de F3 a F5 a completar en las fases siguientes)*
+## 7. Capturas
+
+Evidencias y validaciones gráficas organizadas en la carpeta `capturas/`:
+
+- **Fase F3 — BGP, Ruteo y Conectividad Externa:**
+  - [`F3 - EDGE - routing bgp session print.png`](../capturas/F3%20-%20EDGE%20-%20routing%20bgp%20session%20print.png): Sesiones eBGP establecidas con ISP-1 e ISP-2 mostrando autenticación TCP-MD5 activa.
+  - [`F3 - EDGE - ip route print.png`](../capturas/F3%20-%20EDGE%20-%20ip%20route%20print.png): Tabla de enrutamiento IP en el nodo EDGE con rutas BGP y OSPF convergidas.
+  - [`F3 - PC-USER - ping 1.1.1.1.png`](../capturas/F3%20-%20PC-USER%20-%20ping%201.1.1.1.png): Prueba de conectividad extremo a extremo L3 desde host interno hacia el loopback de Internet.
+
+---
+
+*(Secciones de F4 a F5 a completar en las fases siguientes)*
