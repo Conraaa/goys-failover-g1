@@ -85,18 +85,18 @@
 ## Epic F3 - BGP + firewall
 
 ### eBGP multi-homing (2 sesiones, TCP-MD5)
-- [ ] [R1] Configurar eBGP en EDGE hacia ISP-1 e ISP-2
-- [ ] [R2] Configurar eBGP en ISP-1 e ISP-2 hacia EDGE
-- [ ] [R1] Activar autenticación TCP-MD5
+- [x] [R1] Configurar eBGP en EDGE hacia ISP-1 e ISP-2
+- [x] [R2] Configurar eBGP en ISP-1 e ISP-2 hacia EDGE
+- [x] [R1] Activar autenticación TCP-MD5
 
 ### Redistribución OSPF→BGP
-- [ ] [R1] Configurar anuncio de LANs en EDGE hacia ISPs
+- [x] [R1] Configurar anuncio de LANs en EDGE hacia ISPs
 
 ### Salida a "Internet" (host → loopback ISP)
-- [ ] [R5] Comprobar salida a loopback ISP desde host
+- [x] [R5] Comprobar salida a loopback ISP desde host
 
 ### Firewall edge (filtro + plano de gestión)
-- [ ] [R1] Configurar reglas de firewall en EDGE (forwarding y input)
+- [x] [R1] Configurar reglas de firewall en EDGE (forwarding y input)
 
 ---
 
