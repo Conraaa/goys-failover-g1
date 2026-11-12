@@ -420,6 +420,96 @@ En el router `EDGE` se implementó filtrado perimetral con RouterOS Firewall:
 
 ---
 
+### 4.2 Los 5 drills de failover (F4)
+
+Cada drill fue ejecutado y documentado con la metodología **Detección → Respuesta → Recuperación → Post-Mortem** y medición de tiempos (RTO). Además, se generaron los runbooks operativos individuales en la carpeta `runbooks/`.
+
+#### Drill 1 — VRRP: Se cae el gateway (DIST-1)
+* **Objetivo:** Comprobar la conmutación transparente de gateway virtual ante la muerte de `DIST-1`.
+* **Detección:** Con ping continuo desde `PC-USER` hacia `1.1.1.1`, se suspende el router `DIST-1` en GNS3.
+* **Respuesta:** En `DIST-2`, al expirar el temporizador de anuncios Hello del Master (3 advertisement intervals + Skew time), `vrrp10` promociona automáticamente de estado `B` (Backup) a `RM` (Running Master).
+* **Recuperación:** Se reenciende `DIST-1`. Al tener configurada una prioridad superior (`priority=150` vs `priority=100` de DIST-2), `DIST-1` retoma su rol como Master (preemption) sin intervención manual.
+* **Tiempo medido:** ~2 a 3 segundos (1 o 2 paquetes con timeout en PC-USER).
+* **Post-mortem:** El protocolo VRRPv2 resolvió la falla localmente en la capa de distribución. Los hosts finales no requirieron cambio alguno de IP o gateway, conservando la conectividad de salida a través de la MAC virtual compartida.
+* **Evidencias gráficas:**
+
+![Topología DIST-1 Apagado](../capturas/DRILL%201/F4%20-%20TOPOLOGIA%20-%20DRILL%201%20-%20DIST-1%20apagado.png)
+
+![DIST-2 asume Master en VRRP 10](../capturas/DRILL%201/F4%20-%20DIST-2%20-%20DRILL%201%20-%20vrrp%20print%20durante%20apagado%20de%20DIST-1.png)
+
+![Ping PC-USER durante apagado de DIST-1](../capturas/DRILL%201/F4%20-%20PC-USER%20-%20DRILL%201%20-%20ping%201.1.1.1%20durante%20apagado%20de%20DIST-1.png)
+
+---
+
+#### Drill 2 — OSPF: Se corta el camino interno (EDGE ↔ CORE-1)
+* **Objetivo:** Demostrar la reconvergencia de OSPF y la vital importancia del enlace redundante Core-Core (`CORE-1 ↔ CORE-2`).
+* **Detección:** Se corta el enlace físico entre `EDGE` (ether3) y `CORE-1` (ether1) en GNS3.
+* **Respuesta:** OSPF detecta la caída de port-carrier. `EDGE` y `CORE-1` emiten Router LSAs actualizados y recalculan el árbol SPF. El tráfico ascendente proveniente de `DIST-1` que arriba a `CORE-1` es reconducido horizontalmente a través del enlace Core-Core (`10.0.5.0/30`) hacia `CORE-2`, y desde allí sube a `EDGE` por `10.0.4.0/30`.
+* **Recuperación:** Se reconecta el cable `EDGE ↔ CORE-1`. Las adyacencias OSPF reautentican con MD5 (`ospf-secret-g1`), alcanzan estado `Full` y el tráfico retoma el camino directo de menor costo.
+* **Tiempo medido:** Conmutación instantánea a nivel de enlace (< 1 segundo, 0 pérdidas apreciables de ping).
+* **Post-mortem:** Valida la corrección del Defecto #3 del diseño original de Cisco. Sin el enlace Core-Core, la caída del uplink de CORE-1 habría dejado aislada a toda la rama izquierda de la red.
+* **Evidencias gráficas:**
+
+![Topología Enlace EDGE-CORE-1 Cortado](../capturas/DRILL%202/F4%20-%20TOPOLOGIA%20-%20DRILL%202%20-%20cable%20EDGE-CORE-1%20cortado.png)
+
+![Ping PC-USER durante corte EDGE-CORE-1](../capturas/DRILL%202/F4%20-%20PC-USER%20-%20DRILL%202%20-%20ping%201.1.1.1%20durante%20corte%20de%20cable%20EDGE-CORE-1.png)
+
+---
+
+#### Drill 3 — BGP: Se cae el proveedor primario (ISP-1)
+* **Objetivo:** Verificar la resiliencia del multi-homing eBGP ante la falla del proveedor primario.
+* **Detección:** Se desconecta el cable WAN entre `EDGE` (ether1) e `ISP-1` (ether1) en GNS3.
+* **Respuesta:** La sesión BGP `to-ISP1` cae de forma inmediata por link-down. `EDGE` purga las rutas aprendidas por ISP-1 y selecciona la ruta por defecto alternativa aprendida por eBGP a través de `ISP-2` (`10.0.2.1`, AS 65002), canalizando todo el tráfico por el segundo proveedor.
+* **Recuperación:** Se reconecta el cable `EDGE ↔ ISP-1`. La sesión TCP 179 se restablece con autenticación TCP-MD5, alcanza el estado `established` y reanuncia prefijos, normalizando la tabla RIB-in.
+* **Tiempo medido:** ~1 a 2 segundos de conmutación al cortarse el carrier físico (1-2 paquetes timeout).
+* **Post-mortem:** Demuestra que contar con dos sistemas autónomos independientes previene el aislamiento total de la empresa frente a incidentes en la infraestructura del carrier.
+* **Evidencias gráficas:**
+
+![Topología Enlace EDGE-ISP-1 Cortado](../capturas/DRILL%203/F4%20-%20TOPOLOGIA%20-%20DRILL%203%20-%20cable%20EDGE-ISP-1%20cortado.png)
+
+![Ping PC-USER corte EDGE-ISP-1 (1)](../capturas/DRILL%203/F4%20-%20PC-USER%20-%20DRILL%203%20-%20ping%201.1.1.1%20durante%20corte%20de%20cable%20EDGE-ISP-1%20(1).png)
+
+![Ping PC-USER corte EDGE-ISP-1 (2)](../capturas/DRILL%203/F4%20-%20PC-USER%20-%20DRILL%203%20-%20ping%201.1.1.1%20durante%20corte%20de%20cable%20EDGE-ISP-1%20(2).png)
+
+![Ping PC-USER reconexión EDGE-ISP-1](../capturas/DRILL%203/F4%20-%20PC-USER%20-%20DRILL%203%20-%20ping%201.1.1.1%20durante%20reconexion%20de%20cable%20EDGE-ISP-1.png)
+
+---
+
+#### Drill 4 — check-gateway: Failover estático de enlace
+* **Objetivo:** Comprobar el mecanismo de redundancia L3 alternativo sin BGP mediante sondeo ICMP y distancia administrativa.
+* **Detección:** En `EDGE` se crearon dos rutas estáticas a `8.8.8.8/32` (primaria vía ISP-1 `distance=1 check-gateway=ping`; secundaria vía ISP-2 `distance=2`). Se apaga `ISP-1` en GNS3.
+* **Respuesta:** Al no recibir respuesta a los pings de sondeo periódico hacia `10.0.1.1` (tras fallar 2 pings consecutivos), RouterOS marca la ruta con `distance=1` como inactiva (`IsH`). Automáticamente la ruta de respaldo (`distance=2`) asume el estado activo (`As+`), cursando el tráfico hacia ISP-2.
+* **Recuperación:** Se enciende `ISP-1`. RouterOS recibe respuesta afirmativa por ICMP, rehabilita la ruta con `distance=1` y desactiva la secundaria. Luego se retiran las rutas de prueba.
+* **Tiempo medido:** ~10 a 15 segundos (determinado por el intervalo de sondeo ICMP nativo de RouterOS).
+* **Post-mortem:** `check-gateway` es una alternativa sumamente liviana y robusta para sucursales o enlaces WAN que no corren BGP, protegiendo contra caídas lógicas de gateway.
+* **Evidencias gráficas:**
+
+![Topología ISP-1 Apagado](../capturas/DRILL%204/F4%20-%20TOPOLOGIA%20-%20DRILL%204%20-%20ISP-1%20apagado.png)
+
+![EDGE Ping 10.0.1.1 durante caída ISP-1 (1)](../capturas/DRILL%204/F4%20-%20EDGE%20-%20DRILL%204%20-%20ping%2010.0.1.1%20durante%20apagado%20de%20ISP-1%20(1).png)
+
+![EDGE Ping 10.0.1.1 durante caída ISP-1 (2)](../capturas/DRILL%204/F4%20-%20EDGE%20-%20DRILL%204%20-%20ping%2010.0.1.1%20durante%20apagado%20de%20ISP-1%20(2).png)
+
+![EDGE Ping 10.0.1.1 al reencender ISP-1](../capturas/DRILL%204/F4%20-%20EDGE%20-%20DRILL%204%20-%20ping%2010.0.1.1%20durante%20prendida%20de%20ISP-1.png)
+
+---
+
+#### Drill 5 — Load-sharing VRRP: Ambos DIST activos
+* **Objetivo:** Demostrar que ambos routers de distribución procesan tráfico productivo en paralelo (activo-activo).
+* **Detección / Demostración:** En operación normal en régimen, se ejecutan trazas desde hosts ubicados en distintos segmentos:
+  - Desde `PC-USER` (`192.168.10.100`): comando `trace 1.1.1.1`. Primer salto: `192.168.10.2` (`DIST-1`).
+  - Desde `SRV` (`192.168.20.100`): comando `trace 1.1.1.1`. Primer salto: `192.168.20.3` (`DIST-2`).
+* **Respuesta / Comportamiento:** Cada equipo de distribución atiende como Master un grupo VRRP determinado, dividiendo la carga de la red local equitativamente.
+* **Recuperación:** N/A (operación permanente sin fallas).
+* **Post-mortem:** Elimina el desperdicio de infraestructura de esquemas activo-pasivo clásicos, garantizando máximo retorno de inversión en equipamiento y óptima distribución de ancho de banda.
+* **Evidencias gráficas:**
+
+![Traceroute desde PC-USER pasando por DIST-1](../capturas/DRILL%205/F4%20-%20PC-USER%20-%20DRILL%205%20-%20trace%201.1.1.1.png)
+
+![Traceroute desde SRV pasando por DIST-2](../capturas/DRILL%205/F4%20-%20SRV%20-%20DRILL%205%20-%20trace%201.1.1.1.png)
+
+---
+
 ## 5. Seguridad aplicada
 
 | Mecanismo | Dónde se aplicó | Verificación |
@@ -431,6 +521,24 @@ En el router `EDGE` se implementó filtrado perimetral con RouterOS Firewall:
 | **VRRP auth** | DIST-1 y DIST-2 | Autenticación simple con clave `vrrpg1` en los grupos VRID 10 y VRID 20. Limitada a 8 caracteres conforme a la especificación VRRPv2. |
 | **BGP TCP-MD5** | EDGE, ISP-1, ISP-2 | Autenticación criptográfica TCP-MD5 (`tcp-md5-key=bgp-secret-g1`, RFC 2385) en ambas sesiones eBGP. Sesiones operativas en estado established. |
 | **Firewall perimetral (Input / Forward)** | EDGE | Filtro en cadena `input` (protección del plano de control BGP/OSPF y plano de gestión sólo desde LAN) y en cadena `forward` (bloqueo de tráfico inválido e inicio de conexiones no solicitadas desde WAN). |
+| **Prueba de clave incorrecta (Falla obligatoria)** | CORE-1 y CORE-2 | Se modificó la clave MD5 en CORE-2 a `claveFalsa`. Tras expirar el dead-timer (40s), la adyacencia OSPF cayó y fue removida en CORE-1, probando que el plano de control descarta tráfico no autenticado. Al restaurar `ospf-secret-g1`, la adyacencia volvió a `Full`. |
+
+### 5.1 Evidencia de Seguridad: Clave Incorrecta en OSPF
+
+Para comprobar que la red es inmune a la inyección de rutas espurias o nodos no autorizados, se forzó un error de autenticación en `CORE-2`:
+
+```routeros
+# En CORE-2: clave falsa
+/routing ospf interface-template set [find area=backbone] auth-key=claveFalsa
+```
+
+En `CORE-1`, se observó la desconexión del vecino al vencer el temporizador de Hello:
+
+![Cambio a clave falsa en CORE-2](../capturas/F4%20-%20CORE-2%20-%20cambio%20a%20auth-key%20falsa.png)
+
+![Vecino OSPF caído en CORE-1](../capturas/F4%20-%20CORE-1%20-%20routing%20ospf%20neighbor%20print.png)
+
+Tras restaurar la clave legítima `ospf-secret-g1`, la adyacencia volvió a converger inmediatamente.
 
 ---
 
@@ -451,6 +559,13 @@ En el router `EDGE` se implementó filtrado perimetral con RouterOS Firewall:
 | 2026-11-04 | Conrado (R1) | Configuración de redistribución mutua OSPF/BGP en EDGE (`originate-default=always redistribute=bgp` y `output.redistribute=ospf`) | Propagación de salida a Internet en el Core/Distribución y anuncio de LANs a los ISP (F3) | Remover flags de redistribución en OSPF y BGP |
 | 2026-11-04 | Conrado (R1) | Configuración de reglas de firewall perimetral (input y forward) en router EDGE | Protección del plano de control, plano de gestión y filtrado perimetral contra intrusiones WAN (F3) | Deshabilitar reglas en `/ip firewall filter` |
 | 2026-11-04 | Conrado (R5) | Creación de Snapshot F3-BGP-FW en GNS3 y exportación de backups a `backups/F3/` | Punto de control de configuraciones operativas F3 y respaldos versionados | Restaurar el snapshot F3-BGP-FW o importar backups con `/import` |
+| 2026-11-11 | Conrado (R5) y Romeo (R4) | Ejecución de Drill 1 (VRRP failover al suspender DIST-1) | Validación de redundancia de primer salto (RTO: ~2-3s) | Reencender DIST-1 (preempt automático a Master) |
+| 2026-11-11 | Conrado (R1/R3) | Ejecución de Drill 2 (OSPF failover por enlace Core-Core ante corte EDGE ↔ CORE-1) | Validación de resiliencia del IGP y enlace core-core (< 1s) | Reconectar enlace físico EDGE ↔ CORE-1 |
+| 2026-11-11 | Conrado (R1) y Romeo (R2) | Ejecución de Drill 3 (eBGP multi-homing failover ante corte con ISP-1) | Validación de conmutación inter-AS automática a ISP-2 (~1-2s) | Reconectar enlace EDGE ↔ ISP-1 |
+| 2026-11-11 | Conrado (R1) | Ejecución de Drill 4 (check-gateway conmutación estática por sondeo ICMP en EDGE) | Validación de mecanismo de failover alternativo L3 (~10-15s) | Reencender ISP-1 y retirar rutas de prueba |
+| 2026-11-11 | Conrado (R5) y Romeo (R4) | Ejecución de Drill 5 (Validación de load-sharing VRRP activo-activo entre DIST-1 y DIST-2) | Demostración de aprovechamiento simétrico de ancho de banda | Régimen normal de operación |
+| 2026-11-11 | Conrado (R1) | Configuración de SNMP y herramientas de sondeo Netwatch en router EDGE | Monitoreo continuo de salud y disponibilidad de enlaces hacia ISP-1 e ISP-2 (F4) | Deshabilitar Netwatch con `/tool netwatch disable` |
+| 2026-11-11 | Conrado (R3/R5) | Prueba de inyección de clave incorrecta en OSPF en CORE-2 y verificación de rechazo en CORE-1 | Validación de seguridad del plano de control contra ataques de inyección de rutas | Restaurar clave legítima `ospf-secret-g1` |
 
 ### 6.2 Backups
 
@@ -466,17 +581,64 @@ En el router `EDGE` se implementó filtrado perimetral con RouterOS Firewall:
   - `F3-BGP-FW`: Captura con sesiones eBGP multi-homing establecidas, redistribución de rutas por defecto y LANs, y firewall perimetral activo en EDGE (F3).
 - **Procedimiento de restauración:** Probado mediante comando `/import file-name=<archivo>.rsc`.
 
+### 6.3 Monitoreo (SNMP y Netwatch)
+
+En el nodo de borde (`EDGE`) se implementaron mecanismos proactivos de observación y monitoreo operativo:
+1. **SNMPv2c:** Habilitado para recolección de métricas de interfaces y estado general del equipo:
+   ```routeros
+   /snmp set enabled=yes contact="Grupo 1" location="GNS3 - Borde"
+   ```
+2. **Netwatch:** Sondas ICMP automáticas configuradas para vigilar permanentemente la alcanzabilidad de los gateways de ambos proveedores:
+   ```routeros
+   /tool netwatch add host=10.0.1.1 comment="Monitor ISP-1"
+   /tool netwatch add host=10.0.2.1 comment="Monitor ISP-2"
+   ```
+
+![Configuración Netwatch en EDGE](../capturas/F4%20-%20EDGE%20-%20configuracion%20netwatch.png)
+
 ---
 
 ## 7. Capturas
 
 Evidencias y validaciones gráficas organizadas en la carpeta `capturas/`:
 
-- **Fase F3 — BGP, Ruteo y Conectividad Externa:**
-  - [`F3 - EDGE - routing bgp session print.png`](../capturas/F3%20-%20EDGE%20-%20routing%20bgp%20session%20print.png): Sesiones eBGP establecidas con ISP-1 e ISP-2 mostrando autenticación TCP-MD5 activa.
-  - [`F3 - EDGE - ip route print.png`](../capturas/F3%20-%20EDGE%20-%20ip%20route%20print.png): Tabla de enrutamiento IP en el nodo EDGE con rutas BGP y OSPF convergidas.
-  - [`F3 - PC-USER - ping 1.1.1.1.png`](../capturas/F3%20-%20PC-USER%20-%20ping%201.1.1.1.png): Prueba de conectividad extremo a extremo L3 desde host interno hacia el loopback de Internet.
+### Fase F3 — BGP, Ruteo y Conectividad Externa
+- [`F3 - EDGE - routing bgp session print.png`](../capturas/F3%20-%20EDGE%20-%20routing%20bgp%20session%20print.png): Sesiones eBGP establecidas con ISP-1 e ISP-2 con TCP-MD5.
+- [`F3 - EDGE - ip route print.png`](../capturas/F3%20-%20EDGE%20-%20ip%20route%20print.png): Tabla de enrutamiento IP en el nodo EDGE con rutas BGP y OSPF convergidas.
+- [`F3 - PC-USER - ping 1.1.1.1.png`](../capturas/F3%20-%20PC-USER%20-%20ping%201.1.1.1.png): Prueba de salida a Internet desde host hacia loopback ISP-1.
+
+### Fase F4 — Drills de Failover, Seguridad y Monitoreo
+
+#### Monitoreo y Seguridad
+- [`F4 - EDGE - configuracion netwatch.png`](../capturas/F4%20-%20EDGE%20-%20configuracion%20netwatch.png): Sondas de monitoreo Netwatch en router EDGE para ISP-1 e ISP-2.
+- [`F4 - CORE-2 - cambio a auth-key falsa.png`](../capturas/F4%20-%20CORE-2%20-%20cambio%20a%20auth-key%20falsa.png): Simulación de clave incorrecta en OSPF en CORE-2.
+- [`F4 - CORE-1 - routing ospf neighbor print.png`](../capturas/F4%20-%20CORE-1%20-%20routing%20ospf%20neighbor%20print.png): Caída y rechazo de la adyacencia de CORE-2 en CORE-1 por clave errónea.
+
+#### Drill 1 — VRRP Failover
+- [`F4 - TOPOLOGIA - DRILL 1 - DIST-1 apagado.png`](../capturas/DRILL%201/F4%20-%20TOPOLOGIA%20-%20DRILL%201%20-%20DIST-1%20apagado.png): Topología en GNS3 con DIST-1 suspendido.
+- [`F4 - DIST-2 - DRILL 1 - vrrp print durante apagado de DIST-1.png`](../capturas/DRILL%201/F4%20-%20DIST-2%20-%20DRILL%201%20-%20vrrp%20print%20durante%20apagado%20de%20DIST-1.png): DIST-2 asumiendo rol Master (`RM`) en VRID 10.
+- [`F4 - PC-USER - DRILL 1 - ping 1.1.1.1 durante apagado de DIST-1.png`](../capturas/DRILL%201/F4%20-%20PC-USER%20-%20DRILL%201%20-%20ping%201.1.1.1%20durante%20apagado%20de%20DIST-1.png): Ping en PC-USER con solo 1-2 timeouts antes de conmutar.
+
+#### Drill 2 — OSPF Failover
+- [`F4 - TOPOLOGIA - DRILL 2 - cable EDGE-CORE-1 cortado.png`](../capturas/DRILL%202/F4%20-%20TOPOLOGIA%20-%20DRILL%202%20-%20cable%20EDGE-CORE-1%20cortado.png): Topología con enlace EDGE-CORE-1 interrumpido.
+- [`F4 - PC-USER - DRILL 2 - ping 1.1.1.1 durante corte de cable EDGE-CORE-1.png`](../capturas/DRILL%202/F4%20-%20PC-USER%20-%20DRILL%202%20-%20ping%201.1.1.1%20durante%20corte%20de%20cable%20EDGE-CORE-1.png): Continuidad ininterrumpida de tráfico vía CORE-2 y enlace core-core.
+
+#### Drill 3 — BGP Failover
+- [`F4 - TOPOLOGIA - DRILL 3 - cable EDGE-ISP-1 cortado.png`](../capturas/DRILL%203/F4%20-%20TOPOLOGIA%20-%20DRILL%203%20-%20cable%20EDGE-ISP-1%20cortado.png): Topología con enlace WAN hacia ISP-1 desconectado.
+- [`F4 - PC-USER - DRILL 3 - ping 1.1.1.1 durante corte de cable EDGE-ISP-1 (1).png`](../capturas/DRILL%203/F4%20-%20PC-USER%20-%20DRILL%203%20-%20ping%201.1.1.1%20durante%20corte%20de%20cable%20EDGE-ISP-1%20(1).png): Ping en PC-USER detectando corte con ISP-1.
+- [`F4 - PC-USER - DRILL 3 - ping 1.1.1.1 durante corte de cable EDGE-ISP-1 (2).png`](../capturas/DRILL%203/F4%20-%20PC-USER%20-%20DRILL%203%20-%20ping%201.1.1.1%20durante%20corte%20de%20cable%20EDGE-ISP-1%20(2).png): Tráfico conmutado hacia ISP-2.
+- [`F4 - PC-USER - DRILL 3 - ping 1.1.1.1 durante reconexion de cable EDGE-ISP-1.png`](../capturas/DRILL%203/F4%20-%20PC-USER%20-%20DRILL%203%20-%20ping%201.1.1.1%20durante%20reconexion%20de%20cable%20EDGE-ISP-1.png): Restablecimiento de tráfico tras reconexión de ISP-1.
+
+#### Drill 4 — Check-Gateway Failover
+- [`F4 - TOPOLOGIA - DRILL 4 - ISP-1 apagado.png`](../capturas/DRILL%204/F4%20-%20TOPOLOGIA%20-%20DRILL%204%20-%20ISP-1%20apagado.png): Topología con ISP-1 apagado.
+- [`F4 - EDGE - DRILL 4 - ping 10.0.1.1 durante apagado de ISP-1 (1).png`](../capturas/DRILL%204/F4%20-%20EDGE%20-%20DRILL%204%20-%20ping%2010.0.1.1%20durante%20apagado%20de%20ISP-1%20(1).png): Sonda ICMP en EDGE detectando falla en gateway primario.
+- [`F4 - EDGE - DRILL 4 - ping 10.0.1.1 durante apagado de ISP-1 (2).png`](../capturas/DRILL%204/F4%20-%20EDGE%20-%20DRILL%204%20-%20ping%2010.0.1.1%20durante%20apagado%20de%20ISP-1%20(2).png): Pérdida de gateway primario e invalidación de ruta principal.
+- [`F4 - EDGE - DRILL 4 - ping 10.0.1.1 durante prendida de ISP-1.png`](../capturas/DRILL%204/F4%20-%20EDGE%20-%20DRILL%204%20-%20ping%2010.0.1.1%20durante%20prendida%20de%20ISP-1.png): Reestablecimiento del gateway primario al reencender ISP-1.
+
+#### Drill 5 — Load-Sharing VRRP
+- [`F4 - PC-USER - DRILL 5 - trace 1.1.1.1.png`](../capturas/DRILL%205/F4%20-%20PC-USER%20-%20DRILL%205%20-%20trace%201.1.1.1.png): Traza desde PC-USER saliendo por DIST-1 (`192.168.10.2`).
+- [`F4 - SRV - DRILL 5 - trace 1.1.1.1.png`](../capturas/DRILL%205/F4%20-%20SRV%20-%20DRILL%205%20-%20trace%201.1.1.1.png): Traza desde SRV saliendo por DIST-2 (`192.168.20.3`).
 
 ---
 
-*(Secciones de F4 a F5 a completar en las fases siguientes)*
+*(Fase final F5 a completar en la entrega y defensa)*
