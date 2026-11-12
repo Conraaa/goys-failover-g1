@@ -103,17 +103,17 @@
 ## Epic F4 - Drills + monitoreo
 
 ### Los 5 drills (runbook + post-mortem + tiempo)
-- [ ] [R5] Ejecutar Drill 1 (VRRP) y documentar
-- [ ] [R5] Ejecutar Drill 2 (OSPF) y documentar
-- [ ] [R5] Ejecutar Drill 3 (BGP) y documentar
-- [ ] [R5] Ejecutar Drill 4 (check-gateway) y documentar
-- [ ] [R5] Ejecutar Drill 5 (Load-sharing VRRP) y documentar
+- [x] [R5] Ejecutar Drill 1 (VRRP) y documentar
+- [x] [R5] Ejecutar Drill 2 (OSPF) y documentar
+- [x] [R5] Ejecutar Drill 3 (BGP) y documentar
+- [x] [R5] Ejecutar Drill 4 (check-gateway) y documentar
+- [x] [R5] Ejecutar Drill 5 (Load-sharing VRRP) y documentar
 
 ### Monitoreo (SNMP/chequeos)
-- [ ] [R5] Habilitar SNMP y/o Netwatch en nodos
+- [x] [R5] Habilitar SNMP y/o Netwatch en nodos
 
 ### Verificación de seguridad (clave incorrecta falla)
-- [ ] [R5] Probar fallo de OSPF/BGP con clave incorrecta y documentar
+- [x] [R5] Probar fallo de OSPF/BGP con clave incorrecta y documentar
 
 ---
 
