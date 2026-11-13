@@ -103,13 +103,19 @@ Se implementó la topología jerárquica de 5 capas en GNS3 compuesta por 11 nod
                                 PC-USER             SRV
 ```
 
-> **Snapshot GNS3:** Se tomó el snapshot `BASE` del proyecto en GNS3 tras completar el cableado y verificar el encendido y conectividad de los nodos.
+> **Diagrama visual de la arquitectura:** El diagrama vectorial de la topología completa de 5 capas se encuentra disponible en [`diagramas/topologia_5_capas.svg`](diagramas/topologia_5_capas.svg).
+>
+> **Snapshots de GNS3:**
+> - `BASE`: Estado inicial con nodos cableados, direccionamiento base y conectividad L3 directa comprobada (F1).
+> - `F2-VRRP-OSPF`: Convergencia interna completa con OSPF área 0 autenticado y VRRP activo-activo (F2).
+> - `F3-BGP-FW`: Peering eBGP multi-homing con MD5 hacia ISPs, redistribución de rutas y firewall perimetral (F3).
+> - `F5-FINAL`: Estado consolidado post-drills con monitoreo Netwatch/SNMP activo, listo para defensa operativa (F5).
 
 ---
 
-## 3. Configuración (Estado Operativo F3)
+## 3. Configuraciones finales
 
-Las configuraciones operativas con VRRP, OSPF área 0, eBGP multi-homing y firewall perimetral aplicadas en cada dispositivo fueron extraídas y versionadas en `backups/F3/`.
+Las siguientes configuraciones representan la versión definitiva, limpia y consolidada de toda la red empresarial y proveedores tras completar las fases de diseño, enrutamiento dinámico, firewall perimetral, resiliencia y monitoreo. Los archivos `.rsc` listos para aprovisionar cada router desde cero se encuentran almacenados y versionados en la carpeta [`configs/`](../configs/).
 
 ### 3.1 ISP-1
 ```routeros
@@ -183,6 +189,9 @@ add action=accept chain=forward comment="Permitir retorno de trafico de Internet
 add action=drop chain=forward comment="Bloquear paquetes invalidos" connection-state=invalid
 add action=drop chain=forward comment="Bloquear inicio de conexiones desde ISP-1" connection-state=new in-interface=ether1
 add action=drop chain=forward comment="Bloquear inicio de conexiones desde ISP-2" connection-state=new in-interface=ether2
+/ip route
+add check-gateway=ping distance=1 dst-address=0.0.0.0/0 gateway=10.0.1.1 comment="Ruta por defecto ISP-1 con sondeo ICMP"
+add distance=2 dst-address=0.0.0.0/0 gateway=10.0.2.1 comment="Ruta por defecto ISP-2 flotante"
 /ip service
 set telnet disabled=yes
 set ftp disabled=yes
@@ -198,6 +207,15 @@ add as=65000 local.address=10.0.2.2 .role=ebgp name=to-ISP2 output.redistribute=
 add area=backbone auth=md5 auth-id=1 auth-key=ospf-secret-g1 disabled=no \
     interfaces=ether3,ether4 type=ptp
 add area=backbone disabled=no interfaces=loopback passive
+/tool netwatch
+add comment="Monitoreo ISP-1 Primario" down-script=":log warning \"[NETWATCH] ISP-1 DOWN - Failover a ISP-2\"" \
+    host=10.0.1.1 interval=10s up-script=":log info \"[NETWATCH] ISP-1 UP - Enlace Primario Restablecido\""
+add comment="Monitoreo ISP-2 Backup" down-script=":log warning \"[NETWATCH] ISP-2 DOWN\"" \
+    host=10.0.2.1 interval=10s up-script=":log info \"[NETWATCH] ISP-2 UP\""
+/snmp community
+set [ find default=yes ] addresses=192.168.20.0/24 name=public read-access=yes
+/snmp
+set enabled=yes contact="admin@failover-g1.local" location="Datacenter Edge Rack 1"
 /system identity set name=EDGE
 /system note set show-at-login=no
 ```
@@ -566,19 +584,20 @@ Tras restaurar la clave legítima `ospf-secret-g1`, la adyacencia volvió a conv
 | 2026-11-11 | Conrado (R5) y Romeo (R4) | Ejecución de Drill 5 (Validación de load-sharing VRRP activo-activo entre DIST-1 y DIST-2) | Demostración de aprovechamiento simétrico de ancho de banda | Régimen normal de operación |
 | 2026-11-11 | Conrado (R1) | Configuración de SNMP y herramientas de sondeo Netwatch en router EDGE | Monitoreo continuo de salud y disponibilidad de enlaces hacia ISP-1 e ISP-2 (F4) | Deshabilitar Netwatch con `/tool netwatch disable` |
 | 2026-11-11 | Conrado (R3/R5) | Prueba de inyección de clave incorrecta en OSPF en CORE-2 y verificación de rechazo en CORE-1 | Validación de seguridad del plano de control contra ataques de inyección de rutas | Restaurar clave legítima `ospf-secret-g1` |
+| 2026-11-11 | Conrado (R1/R3/R5) y Romeo (R2/R4) | Consolidación de configuraciones finales .rsc en `configs/`, exportación de diagramas y cierre de proyecto | Cierre formal de la Epic F5, congelamiento de topología y entrega de memoria completa | N/A (Versión final de entrega) |
 
-### 6.2 Backups
+### 6.2 Backups y Configuraciones Finales
 
-- **Archivos exportados F1:** Versionados en `backups/F1/` (`backup-f1-*.rcs`).
-- **Archivos exportados F2:** Versionados en `backups/F2/` (`backup-f2-*.rsc`).
-- **Archivos exportados F3:** Versionados en `backups/F3/`:
-  - `backups/F3/backup-f3-EDGE.rsc`
-  - `backups/F3/backup-f3-ISP-1.rsc`
-  - `backups/F3/backup-f3-ISP-2.rsc`
-- **Snapshots GNS3:**
+- **Configuraciones Finales (.rsc):** Disponibles en la carpeta raíz [`configs/`](../configs/) con los scripts limpios y depurados de los 7 routers para aprovisionamiento inicial y producción.
+- **Historial de Backups por Fases:**
+  - **Fase F1:** Versionados en `backups/F1/` (`backup-f1-*.rcs`).
+  - **Fase F2:** Versionados en `backups/F2/` (`backup-f2-*.rsc`).
+  - **Fase F3:** Versionados en `backups/F3/` (`backup-f3-EDGE.rsc`, `backup-f3-ISP-1.rsc`, `backup-f3-ISP-2.rsc`).
+- **Snapshots del Proyecto en GNS3:**
   - `BASE`: Captura del estado inicial y cableado verificado de la topología (F1).
   - `F2-VRRP-OSPF`: Captura con los servicios de VRRP (load-sharing) y OSPF área 0 operativos y convergidos (F2).
   - `F3-BGP-FW`: Captura con sesiones eBGP multi-homing establecidas, redistribución de rutas por defecto y LANs, y firewall perimetral activo en EDGE (F3).
+  - `F5-FINAL`: Congelamiento final del laboratorio tras completar los 5 drills, monitoreo Netwatch y preparativos para la defensa oral (F5).
 - **Procedimiento de restauración:** Probado mediante comando `/import file-name=<archivo>.rsc`.
 
 ### 6.3 Monitoreo (SNMP y Netwatch)
@@ -641,4 +660,83 @@ Evidencias y validaciones gráficas organizadas en la carpeta `capturas/`:
 
 ---
 
-*(Fase final F5 a completar en la entrega y defensa)*
+## 8. Conclusiones y lecciones aprendidas
+
+### 8.1 Post-Mortem Global del Proyecto
+
+El desarrollo integral de este laboratorio demostró que la **alta disponibilidad y resiliencia en redes empresariales no depende de una tecnología aislada, sino de un diseño multicapa coordinado**. A lo largo de las 6 fases (F0 a F5), se validó experimentalmente cómo interactúan los protocolos en cada estrato del modelo jerárquico ante fallas inducidas:
+
+1. **Jerarquía y desacoplamiento de capas:**
+   - En la capa de acceso/distribución, **VRRP** resolvió el problema del primer salto de los clientes hacia su puerta de enlace sin requerir configuraciones complejas en los endpoints. La configuración activo-activo mediante dos grupos (VRID 10 y VRID 20) demostró que es posible eliminar el hardware ocioso y distribuir el ancho de banda simétricamente.
+   - En el núcleo (**Core**), **OSPF área 0** garantizó una convergencia interna casi instantánea gracias al algoritmo Dijkstra (SPF) y a la introducción del enlace redundante **Core-Core**, elemento clave que solucionó el defecto estructural del diseño inicial.
+   - En el borde (**Edge**), **eBGP multi-homing** con dos sistemas autónomos independientes (`AS 65001` y `AS 65002`) aseguró la redundancia hacia Internet mediante políticas asimétricas intencionales (Local-Preference para downstream y AS-Path prepending para upstream).
+
+2. **Análisis comparativo de tiempos de recuperación (RTO):**
+   - **Link-down físico (0 segundos / 0 pings perdidos):** Tanto en OSPF (Drill 2) como en eBGP (Drill 3), la caída física de la interfaz desencadenó la invalidación inmediata del *Next-Hop* en el FIB del kernel de RouterOS. La redirección de paquetes hacia el camino alternativo fue sub-segundo y completamente transparente para las aplicaciones de usuario.
+   - **Falla por temporizadores / Dead Interval (~2 segundos):** En VRRP (Drill 1), al suspender el nodo Master sin que cayera el enlace L2, el Backup debió esperar el vencimiento del Master Dead Timer. Esto provocó la pérdida de exactamente 2 pings ICMP antes de que DIST-2 tomara la IP virtual.
+   - **Falla remota sin pérdida de portadora (~29 segundos):** En el Drill 4 (caída remota de ISP-1), la interfaz física de EDGE permaneció en `up`. La conmutación dependió del mecanismo estático de sondeo `check-gateway=ping`. La necesidad de fallar dos pings consecutivos de 10 segundos cada uno antes de marcar el gateway como inalcanzable ilustra el costo en tiempo de detección cuando no hay señalización en capas inferiores. Esto confirma la necesidad en producción de protocolos ultra-rápidos como **BFD (Bidirectional Forwarding Detection)** acoplados a BGP y OSPF.
+
+3. **Seguridad integrada en el plano de control:**
+   - La prueba de clave incorrecta en OSPF demostró la vulnerabilidad crítica que representaría un plano de control sin autenticación. Un router desalineado o malicioso sin la clave MD5 legítima es inmediatamente rechazado en el intercambio *Hello*, impidiendo la formación de adyacencias y protegiendo la tabla de enrutamiento contra inyecciones arbitrarias.
+
+4. **Operación, reproducibilidad y disciplina de software:**
+   - La adopción estricta de **Gitflow**, **Conventional Commits**, change logs cronológicos y runbooks paso a paso transformó una tarea de configuración en un proceso de ingeniería reproducible. Poder restaurar un router en minutos a partir de un script `/export` versionado elimina el factor sorpresa y reduce el tiempo medio de recuperación (**MTTR**).
+
+### 8.2 Dificultades Superadas
+
+- **Restricción de VRRPv2 en contraseñas:** Uno de los mayores hallazgos técnicos de laboratorio fue la incompatibilidad de contraseñas de más de 8 caracteres en VRRP simple authentication (`vrrp-secret-g1` fallaba silenciosamente hasta acortarlo a `vrrpg1`). Este ajuste fue documentado y mitigado en F2 con fundamento en la RFC 3768.
+- **Redistribución y prevención de bucles:** La inyección mutua de rutas entre OSPF y BGP en EDGE exigió un control cuidadoso (`originate-default=always` y filtros de red) para evitar que la ruta por defecto inyectada hacia el Core volviera a ser anunciada a los ISPs.
+- **Gestión protegida vs tráfico de tránsito:** El diseño del firewall perimetral en EDGE requirió diferenciar estrictamente entre la cadena `input` (protección de los planos de control y gestión del router) y la cadena `forward` (tránsito de los usuarios hacia Internet), asegurando que el filtrado no bloqueara los mensajes de protocolo OSPF (89) o BGP (179).
+
+---
+
+## 9. Referencias y bibliografía
+
+1. **RFC 5798:** Nadas, S. (2010). *Virtual Router Redundancy Protocol (VRRP) Version 3 for IPv4 and IPv6*. IETF.
+2. **RFC 3768:** Hinden, R. (2004). *Virtual Router Redundancy Protocol (VRRP)*. IETF.
+3. **RFC 2328:** Moy, J. (1998). *OSPF Version 2*. IETF Network Working Group.
+4. **RFC 4271:** Rekhter, Y., Li, T., Hares, S. (2006). *A Border Gateway Protocol 4 (BGP-4)*. IETF.
+5. **RFC 2385:** Heffernan, A. (1998). *Protection of BGP Sessions via the TCP MD5 Signature Option*. IETF.
+6. **RFC 5709:** Bhatia, M., et al. (2009). *OSPFv2 HMAC-SHA Cryptographic Authentication*. IETF.
+7. **MikroTik RouterOS v7 Documentation:** *Routing (BGP, OSPF), VRRP, IP Firewall & Tools (Netwatch)*. help.mikrotik.com.
+8. **Beyer, B., Jones, C., Petoff, J., Murphy, N. R. (2016):** *Site Reliability Engineering: How Google Runs Production Systems*. O'Reilly Media.
+9. **Halabi, B. (2000):** *Internet Routing Architectures* (2nd ed.). Cisco Press.
+10. **Doyle, J., Carroll, J. (2005):** *Routing TCP/IP, Volume 1 & 2*. Cisco Press.
+
+---
+
+## 10. Checklist de entrega final
+
+### Diseño (F0)
+- [x] IPAM completo y sin solapamiento (enlaces /30 y LANs /24)
+- [x] Corrección del diagrama original justificada (≥ 3 defectos analizados y resueltos)
+- [x] Política de seguridad definida (usuarios, privilegios, servicios apagados, claves)
+- [x] Política de operación definida (formato de change log, Gitflow y backups)
+
+### Redes (F1 - F3)
+- [x] 7 MikroTik CHR + 2 switches L2 + 2 VPCs levantados y cableados en GNS3
+- [x] VRRP operativo con 2 grupos en load-sharing activo-activo (VRID 10 y 20)
+- [x] OSPF área 0 con adyacencias FULL en todos los enlaces internos (incluyendo enlace Core-Core)
+- [x] BGP eBGP ×2 establecido en multi-homing con AS 65001 y AS 65002
+- [x] Los 5 drills ejecutados y documentados (runbooks en `runbooks/` + post-mortem + RTO medido)
+
+### Seguridad (F0 - F4)
+- [x] Hardening de servicios aplicado en los 7 routers (telnet, ftp, www, api desactivados)
+- [x] OSPF con autenticación criptográfica MD5 activa (`ospf-secret-g1`)
+- [x] BGP con autenticación TCP-MD5 activa (`bgp-secret-g1`)
+- [x] VRRP con autenticación simple activa (`vrrpg1`)
+- [x] Firewall de borde implementado en EDGE (cadenas input y forward protegidas)
+- [x] Prueba de clave incorrecta en OSPF ejecutada y documentada (falla demostrada)
+
+### Operación (F0 - F4)
+- [x] Change log completo y consistente con los commits del repositorio
+- [x] Historial de backups por fases (`backups/F1`, `F2`, `F3`) y configuraciones finales en `configs/`
+- [x] Monitoreo implementado y documentado (Netwatch ICMP y SNMPv2c en EDGE)
+- [x] Runbook independiente por cada uno de los 5 drills en `runbooks/`
+
+### Entrega (F5)
+- [x] Memoria técnica completa con todas las secciones de la plantilla oficial
+- [x] Repositorio Git estructurado según convención, con trazabilidad de commits por rol
+- [x] Backlog del proyecto (`backlog.md`) con el 100% de las tareas cerradas
+- [x] Catálogo probatorio completo con capturas organizadas en `capturas/` y diagramas en `docs/diagramas/`
+- [x] Defensa oral preparada entre Conrado (R1/R3/R5) y Romeo (R2/R4) con dominio de temas propios y cruzados
