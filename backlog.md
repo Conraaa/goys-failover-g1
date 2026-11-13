@@ -120,11 +120,11 @@
 ## Epic F5 - Memoria + defensa
 
 ### Memoria (plantilla completa)
-- [ ] [R5] Revisar que memoria.md esté 100% completada
+- [x] [R5] Revisar que memoria.md esté 100% completada
 
 ### Backlog cerrado (todo en "hecho")
-- [ ] [R5] Pasar todas las tareas a completadas
+- [x] [R5] Pasar todas las tareas a completadas
 
 ### Defensa oral (parte propia + ajena)
-- [ ] [R1] Preparar defensa oral
-- [ ] [R2] Preparar defensa oral
+- [x] [R1] Preparar defensa oral
+- [x] [R2] Preparar defensa oral
